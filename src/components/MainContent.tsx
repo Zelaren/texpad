@@ -16,7 +16,7 @@ interface MainContentProps {
 const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [showToolbar, setShowToolbar] = useState(false)
-  const { currentLine, setCurrentLine, handleMouseMove } = useLineAlignment(30)
+  const { currentLine, setCurrentLine } = useLineAlignment(30)
   const { containerRef } = useQuillEditor(quillInstance, {
     beforeCreate: () => {
       Quill.register({ 'formats/chart': ChartBlot })
@@ -33,18 +33,9 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
           const lineHeight = 30
           const currentLineNumber = Math.floor((bounds.top + bounds.height / 2) / lineHeight)
           setCurrentLine(currentLineNumber)
-
-          const [line] = quillInstance.current!.getLine(range.index)
-          const lineText = (line as any)?.domNode?.textContent || ''
-
-          if ((range.length === 0 && range.index === 0) || (lineText.trim() === '' && bounds.left < 50)) {
-            setShowToolbar(true)
-          } else {
-            setShowToolbar(false)
-          }
         }
       } else {
-        setShowToolbar(false)
+        // 保持悬停控制工具栏显示，不在选择变化时强制关闭
       }
     })
 
@@ -124,7 +115,6 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         }
       }, 10)
     }
-    setShowToolbar(false)
   }
 
   // 图片上传并插入到编辑器
@@ -156,13 +146,20 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     } finally {
       // 清空 input 以便下次选择同一文件也会触发 change
       if (imageInputRef.current) imageInputRef.current.value = ''
-      setShowToolbar(false)
     }
   }
 
   // 鼠标移动仅更新当前行号
 
-  const handleEditorMouseMove = handleMouseMove
+  const handleEditorMouseMove: React.MouseEventHandler<HTMLDivElement> = (e) => {
+    if (!quillInstance.current) return
+    const root = quillInstance.current.root as HTMLElement
+    const rect = root.getBoundingClientRect()
+    if (e.clientY < rect.top || e.clientY > rect.bottom) return
+    const lineHeight = 30
+    const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
+    setCurrentLine(lineNum)
+  }
 
   const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
     if (!quillInstance.current) return
@@ -247,7 +244,6 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     // 在图表后补一个换行，便于继续输入
     quillInstance.current.insertText(insertIndex + 1, '\n', Quill.sources.SILENT)
     quillInstance.current.setSelection(insertIndex + 2, 0, Quill.sources.SILENT)
-    setShowToolbar(false)
   }
 
   // 占位：AI 生成功能暂未实现
@@ -257,12 +253,15 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   return (
     <div className="flex-1 flex relative">
       {/* 左侧边距区域 - 增加宽度 */}
-      <div className="w-64 bg-gray-50 border-r border-gray-200 relative">
+      <div
+        className="w-64 bg-gray-50 border-r border-gray-200 relative"
+        onMouseEnter={() => setShowToolbar(true)}
+        onMouseLeave={() => setShowToolbar(false)}
+      >
         {/* 工具按钮，紧贴右侧分割线 */}
         <button
           className="absolute right-2 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm hover:bg-blue-700 opacity-50 hover:opacity-100 transition-opacity"
           style={{ top: `${currentLine * 30 + 12}px` }} // 调整为30px间距，与信笺行中心对齐
-          onClick={() => setShowToolbar(!showToolbar)}
         >
           +
         </button>
