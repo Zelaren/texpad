@@ -1,15 +1,13 @@
 import React, { useEffect, useRef } from 'react'
 import { Chart } from '@antv/g2'
+import type { ChartData, ChartDatum } from '../types/chart'
 
-interface G2ChartComponentProps {
-  data: any[]; // Expecting data for G2 chart
-  type?: 'line' | 'interval'; // Chart type, default to line
-  xField?: string;
-  yField?: string;
+interface G2ChartComponentProps extends Omit<ChartData, 'data'> {
+  data: ChartDatum[]
 }
 
 const G2ChartComponent: React.FC<G2ChartComponentProps> = ({ data, type = 'line', xField = 'year', yField = 'value' }) => {
-  const chartContainerRef = useRef(null)
+  const chartContainerRef = useRef<HTMLDivElement | null>(null)
   const chartInstance = useRef<Chart | null>(null)
 
   useEffect(() => {

@@ -2,14 +2,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import Quill from 'quill'
+import type { ChartData } from '../types/chart'
 const BlockEmbed = Quill.import('blots/block/embed')
-
-interface ChartData {
-  data: any[];
-  type?: 'line' | 'interval';
-  xField?: string;
-  yField?: string;
-}
 
 // We need to dynamically import G2ChartComponent to avoid circular dependencies
 // and ensure it's loaded only when needed.

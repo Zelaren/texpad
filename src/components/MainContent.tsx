@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Quill from 'quill'
-// import { Chart } from '@antv/g2' // Remove G2 Chart import
-import ChartBlot from '../utils/ChartBlot' // Import ChartBlot
-import 'quill/dist/quill.snow.css' // Import Quill styles
+import ChartBlot from '../utils/ChartBlot'
+import 'quill/dist/quill.snow.css'
+import AlignmentGuides from './AlignmentGuides'
+import InlineToolbar from './InlineToolbar'
+import { useQuillEditor } from '../hooks/useQuillEditor'
+import { useLineAlignment } from '../hooks/useLineAlignment'
 
 interface MainContentProps {
   quillInstance: React.MutableRefObject<Quill | null>
@@ -11,100 +14,83 @@ interface MainContentProps {
 // AI 生成功能暂未实现
 
 const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
-  const quillRef = useRef(null)
-  const [showToolbar, setShowToolbar] = useState(false)
-  const [currentLine, setCurrentLine] = useState(0)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const [showToolbar, setShowToolbar] = useState(false)
+  const { currentLine, setCurrentLine, handleMouseMove } = useLineAlignment(30)
+  const { containerRef } = useQuillEditor(quillInstance, {
+    beforeCreate: () => {
+      Quill.register({ 'formats/chart': ChartBlot })
+    },
+    placeholder: '开始书写...'
+  })
 
   useEffect(() => {
-    if (!quillInstance.current) {
-      // Register custom blot before initializing Quill
-      Quill.register({
-        'formats/chart': ChartBlot
-      })
+    if (!quillInstance.current) return
+    quillInstance.current.on('selection-change', (range) => {
+      if (range) {
+        const bounds = quillInstance.current!.getBounds(range.index)
+        if (bounds) {
+          const lineHeight = 30
+          const currentLineNumber = Math.floor((bounds.top + bounds.height / 2) / lineHeight)
+          setCurrentLine(currentLineNumber)
 
-      if (quillRef.current) {
-        quillInstance.current = new Quill(quillRef.current, {
-          theme: 'snow', // 改为snow主题以支持格式化
-          placeholder: '开始书写...',
-          modules: {
-            toolbar: false // 禁用默认工具栏，使用自定义工具栏
-          }
-        })
+          const [line] = quillInstance.current!.getLine(range.index)
+          const lineText = (line as any)?.domNode?.textContent || ''
 
-        // 监听选择变化
-        quillInstance.current.on('selection-change', (range) => {
-          if (range) {
-            const bounds = quillInstance.current!.getBounds(range.index)
-            if (bounds) {
-              const lineHeight = 30 // 对齐线间隔改为30px
-              const currentLineNumber = Math.floor((bounds.top + bounds.height/2) / lineHeight)
-              setCurrentLine(currentLineNumber)
-
-              // 检查是否在行首且无内容
-              const [line] = quillInstance.current!.getLine(range.index)
-              const lineText = line?.domNode?.textContent || ''
-
-              if (range.length === 0 && range.index === 0 ||
-                  (lineText.trim() === '' && bounds.left < 50)) {
-                setShowToolbar(true)
-              } else {
-                setShowToolbar(false)
-              }
-            }
+          if ((range.length === 0 && range.index === 0) || (lineText.trim() === '' && bounds.left < 50)) {
+            setShowToolbar(true)
           } else {
             setShowToolbar(false)
           }
-        })
-
-        // 添加自定义样式
-        const editorElement = quillInstance.current.root
-        editorElement.style.lineHeight = '30px'
-        editorElement.style.fontSize = '14px'
-
-        // 添加演示内容来验证格式化功能
-        const demoContent = [
-          { insert: '欢迎使用图文图表制作工具' },
-          { insert: '\n', attributes: { header: 1 } },
-          { insert: '这是一个功能演示文档' },
-          { insert: '\n', attributes: { header: 2 } },
-          { insert: '小标题示例' },
-          { insert: '\n', attributes: { header: 3 } },
-          { insert: '这是普通段落文本，用于展示正常的文字显示效果。' },
-          { insert: '\n' },
-          { insert: '这是粗体文本', attributes: { bold: true } },
-          { insert: '，这是' },
-          { insert: '斜体文本', attributes: { italic: true } },
-          { insert: '，这是' },
-          { insert: '粗斜体文本', attributes: { bold: true, italic: true } },
-          { insert: '。' },
-          { insert: '\n' },
-          { insert: '有序列表示例：' },
-          { insert: '\n' },
-          { insert: '第一项内容' },
-          { insert: '\n', attributes: { list: 'ordered' } },
-          { insert: '第二项内容' },
-          { insert: '\n', attributes: { list: 'ordered' } },
-          { insert: '第三项内容' },
-          { insert: '\n', attributes: { list: 'ordered' } },
-          { insert: '\n' },
-          { insert: '无序列表示例：' },
-          { insert: '\n' },
-          { insert: '项目一' },
-          { insert: '\n', attributes: { list: 'bullet' } },
-          { insert: '项目二' },
-          { insert: '\n', attributes: { list: 'bullet' } },
-          { insert: '项目三' },
-          { insert: '\n', attributes: { list: 'bullet' } },
-          { insert: '\n' },
-          { insert: '点击左侧的 + 按钮可以添加更多格式或插入图表。' },
-          { insert: '\n' }
-        ]
-
-        quillInstance.current.setContents(demoContent)
+        }
+      } else {
+        setShowToolbar(false)
       }
-    }
-  }, [quillInstance])
+    })
+
+    const editorElement = quillInstance.current.root as HTMLElement
+    editorElement.style.lineHeight = '30px'
+    editorElement.style.fontSize = '14px'
+
+    const demoContent = [
+      { insert: '欢迎使用图文图表制作工具' },
+      { insert: '\n', attributes: { header: 1 } },
+      { insert: '这是一个功能演示文档' },
+      { insert: '\n', attributes: { header: 2 } },
+      { insert: '小标题示例' },
+      { insert: '\n', attributes: { header: 3 } },
+      { insert: '这是普通段落文本，用于展示正常的文字显示效果。' },
+      { insert: '\n' },
+      { insert: '这是粗体文本', attributes: { bold: true } },
+      { insert: '，这是' },
+      { insert: '斜体文本', attributes: { italic: true } },
+      { insert: '，这是' },
+      { insert: '粗斜体文本', attributes: { bold: true, italic: true } },
+      { insert: '。' },
+      { insert: '\n' },
+      { insert: '有序列表示例：' },
+      { insert: '\n' },
+      { insert: '第一项内容' },
+      { insert: '\n', attributes: { list: 'ordered' } },
+      { insert: '第二项内容' },
+      { insert: '\n', attributes: { list: 'ordered' } },
+      { insert: '第三项内容' },
+      { insert: '\n', attributes: { list: 'ordered' } },
+      { insert: '\n' },
+      { insert: '无序列表示例：' },
+      { insert: '\n' },
+      { insert: '项目一' },
+      { insert: '\n', attributes: { list: 'bullet' } },
+      { insert: '项目二' },
+      { insert: '\n', attributes: { list: 'bullet' } },
+      { insert: '项目三' },
+      { insert: '\n', attributes: { list: 'bullet' } },
+      { insert: '\n' },
+      { insert: '点击左侧的 + 按钮可以添加更多格式或插入图表。' },
+      { insert: '\n' }
+    ]
+    quillInstance.current.setContents(demoContent)
+  }, [quillInstance, setCurrentLine])
 
   const handleFormatClick = (format: string, value?: any) => {
     if (!quillInstance.current) return
@@ -176,15 +162,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
 
   // 鼠标移动仅更新当前行号
 
-  const handleEditorMouseMove: React.MouseEventHandler<HTMLDivElement> = (e) => {
-    if (!quillInstance.current) return
-    const root = quillInstance.current.root as HTMLElement
-    const rect = root.getBoundingClientRect()
-    if (e.clientY < rect.top || e.clientY > rect.bottom) return
-    const lineHeight = 30
-    const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
-    setCurrentLine(lineNum)
-  }
+  const handleEditorMouseMove = handleMouseMove
 
   const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
     if (!quillInstance.current) return
@@ -274,26 +252,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
 
   // 占位：AI 生成功能暂未实现
 
-  // 生成对齐线，间距改为30px
-  const generateAlignmentLines = () => {
-    const lines = []
-    const lineHeight = 30 // 修改为30px
-    const totalLines = 100 // 增加总行数以适应更小的间距
-
-    for (let i = 0; i < totalLines; i++) {
-      lines.push(
-        <div
-          key={i}
-          className="absolute left-0 right-0 border-b border-blue-100"
-          style={{
-            top: `${i * lineHeight}px`,
-            height: `${lineHeight}px`
-          }}
-        />
-      )
-    }
-    return lines
-  }
+  // 已拆分 AlignmentGuides 组件
 
   return (
     <div className="flex-1 flex relative">
@@ -309,53 +268,25 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         </button>
 
         {/* 工具提示完全显示在左侧空间 */}
-        {showToolbar && (
-          <div
-            className="absolute right-12 bg-white border border-gray-300 rounded-lg shadow-xl p-4 z-20 flex flex-col space-y-4 w-60"
-            style={{
-              top: `${currentLine * 30 + 5}px` // 跟随当前行位置
-            }}
-          >
-            {/* 第一行：T/H1/H2/H3/H4/有序/无序 */}
-            <div className="grid grid-cols-7 gap-2">
-              <button onClick={() => handleFormatClick('normal')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">T</button>
-              <button onClick={() => handleFormatClick('header', 1)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H1</button>
-              <button onClick={() => handleFormatClick('header', 2)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H2</button>
-              <button onClick={() => handleFormatClick('header', 3)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H3</button>
-              <button onClick={() => handleFormatClick('normal')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H4</button>
-              <button onClick={() => handleFormatClick('list', 'ordered')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">有序</button>
-              <button onClick={() => handleFormatClick('list', 'bullet')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">无序</button>
-            </div>
-
-            {/* 第二行：上传图片 */}
-            <div className="flex items-center">
-              <button onClick={handleImageUploadClick} className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-center">上传图片</button>
-              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileChange} />
-            </div>
-
-            {/* 第三行：插入示例图表 + AI 生成（占位） */}
-            <div className="grid grid-cols-2 gap-2 items-center">
-              <button onClick={handleInsertSampleChart} className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded text-center">插入示例图表</button>
-              <button disabled className="px-3 py-2 bg-gray-100 text-gray-400 rounded text-center cursor-not-allowed">AI 生成（暂未实现）</button>
-            </div>
-          </div>
-        )}
+        <InlineToolbar
+          topPx={currentLine * 30 + 5}
+          visible={showToolbar}
+          onFormat={handleFormatClick}
+          onUploadImage={handleImageUploadClick}
+          onInsertChart={handleInsertSampleChart}
+          bindFileInput={(el) => (imageInputRef.current = el)}
+          onImageChange={handleImageFileChange}
+        />
       </div>
 
       {/* 主要内容区域 - 移除外框和边框 */}
       <div className="flex-1 bg-white relative overflow-hidden">
         {/* 对齐线背景 */}
-        <div className="absolute inset-0 pointer-events-none">
-          {generateAlignmentLines()}
-        </div>
+        <AlignmentGuides lineHeightPx={30} totalLines={100} />
 
         {/* 编辑器容器 - 移除边框和内边距 */}
         <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove} onMouseDown={handleEditorMouseDown}>
-          <div
-            ref={quillRef}
-            className="w-full min-h-full outline-none quill-editor"
-            style={{ padding: '6px 24px' }} // 只保留必要的内边距
-          />
+          <div ref={containerRef} className="w-full min-h-full outline-none quill-editor" style={{ padding: '6px 24px' }} />
         </div>
       </div>
 
