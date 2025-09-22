@@ -22,7 +22,7 @@ const importG2ChartComponent = async () => {
   }
 }
 
-class ChartBlot extends BlockEmbed {
+class ChartBlot extends (BlockEmbed as any) {
   static blotName = 'chart';
   static className = 'quill-chart-embed';
   static tagName = 'div';
