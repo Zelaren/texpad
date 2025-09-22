@@ -33,7 +33,7 @@ const InlineToolbar: React.FC<InlineToolbarProps> = ({ topPx, visible, onFormat,
       </div>
 
       <div className="grid grid-cols-2 gap-2 items-center">
-        <button onClick={onInsertChart} className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded text-center">插入示例图表</button>
+        <button onMouseDown={(e) => { e.preventDefault(); onInsertChart() }} className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded text-center">插入示例图表</button>
         <button disabled className="px-3 py-2 bg-gray-100 text-gray-400 rounded text-center cursor-not-allowed">AI 生成（暂未实现）</button>
       </div>
     </div>

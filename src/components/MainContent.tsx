@@ -168,7 +168,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     const lineHeight = 30
     const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
 
-    // 计算该行的起始 index
+    // 计算该“逻辑行”的起始 index（修正换行符计数）
     const q: any = quillInstance.current as any
     const lines = q.getLines(0, Number.MAX_SAFE_INTEGER) || []
     if (lines.length === 0) {
@@ -179,41 +179,84 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
 
     let startIndex = 0
     for (let i = 0; i < clamped; i++) {
-      const len = typeof lines[i]?.length === 'function' ? lines[i].length() : 1
-      startIndex += (len + 1) // 包含换行
+      const len = typeof lines[i]?.length === 'function' ? lines[i].length() : 0
+      startIndex += len // Quill 行长度已包含换行，无需额外 +1
     }
-    const lineLen = typeof lines[clamped]?.length === 'function' ? lines[clamped].length() : 0
+    const rawLineLen = typeof lines[clamped]?.length === 'function' ? lines[clamped].length() : 0
+    const visibleLen = Math.max(0, rawLineLen - 1) // 去除行尾换行
 
     // 空行：直接定位到行首
-    if (lineLen === 0) {
+    if (visibleLen === 0) {
       e.preventDefault()
       quillInstance.current.focus()
       requestAnimationFrame(() => quillInstance.current!.setSelection(startIndex, 0, Quill.sources.SILENT))
       return
     }
 
-    // 根据水平位置定位到最近字符（二分查找）
     const targetX = e.clientX - rect.left
-    let low = 0
-    let high = lineLen
-    let bestOffset = 0
-    let bestDist = Number.POSITIVE_INFINITY
-    const getLeftAt = (offset: number) => {
+    const targetY = e.clientY - rect.top
+
+    const getBoundsAt = (offset: number) => {
       const b = quillInstance.current!.getBounds(startIndex + offset)
-      return (b && typeof b.left === 'number') ? b.left : 0
+      return {
+        left: (b && typeof b.left === 'number') ? b.left : 0,
+        top: (b && typeof b.top === 'number') ? b.top : 0,
+      }
     }
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2)
-      const left = getLeftAt(mid)
+
+    // 先按垂直位置找到最接近的“软换行”行（top 最接近）
+    let lowV = 0
+    let highV = visibleLen
+    let bestByTopOffset = 0
+    let bestTopDist = Number.POSITIVE_INFINITY
+    while (lowV <= highV) {
+      const mid = Math.floor((lowV + highV) / 2)
+      const { top } = getBoundsAt(mid)
+      const dist = Math.abs(top - targetY)
+      if (dist < bestTopDist) {
+        bestTopDist = dist
+        bestByTopOffset = mid
+      }
+      if (top < targetY) {
+        lowV = mid + 1
+      } else {
+        highV = mid - 1
+      }
+    }
+
+    const rowTop = getBoundsAt(bestByTopOffset).top
+
+    // 扩展找到该行（相同 top）的起止 offset
+    let rowStart = bestByTopOffset
+    while (rowStart > 0) {
+      const { top } = getBoundsAt(rowStart - 1)
+      if (top !== rowTop) break
+      rowStart -= 1
+    }
+    let rowEnd = bestByTopOffset
+    while (rowEnd < visibleLen) {
+      const { top } = getBoundsAt(rowEnd + 1)
+      if (top !== rowTop) break
+      rowEnd += 1
+    }
+
+    // 在当前软行内按水平位置二分查找
+    let lowH = rowStart
+    let highH = rowEnd
+    let bestOffset = rowStart
+    let bestLeftDist = Number.POSITIVE_INFINITY
+    while (lowH <= highH) {
+      const mid = Math.floor((lowH + highH) / 2)
+      const { left } = getBoundsAt(mid)
       const dist = Math.abs(left - targetX)
-      if (dist < bestDist) {
-        bestDist = dist
+      if (dist < bestLeftDist) {
+        bestLeftDist = dist
         bestOffset = mid
       }
       if (left < targetX) {
-        low = mid + 1
+        lowH = mid + 1
       } else {
-        high = mid - 1
+        highH = mid - 1
       }
     }
 

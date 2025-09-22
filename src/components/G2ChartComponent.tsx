@@ -43,7 +43,7 @@ const G2ChartComponent: React.FC<G2ChartComponentProps> = ({ data, type = 'line'
     }
   }, [data, type, xField, yField])
 
-  return <div ref={chartContainerRef} className="w-full h-full" />
+  return <div ref={chartContainerRef} className="w-full" style={{ height: 300 }} />
 }
 
 export default G2ChartComponent

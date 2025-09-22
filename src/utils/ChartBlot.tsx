@@ -24,12 +24,21 @@ class ChartBlot extends (BlockEmbed as any) {
   static create(value: ChartData) {
     const node = super.create() as HTMLElement;
     node.setAttribute('data-chart', JSON.stringify(value));
-    importG2ChartComponent().then(() => {
-      if (G2ChartComponent) {
-        const root = ReactDOM.createRoot(node);
-        root.render(<G2ChartComponent {...value} />);
-      }
-    })
+    node.style.display = 'block'
+    node.style.minHeight = '300px'
+    node.style.width = '100%'
+    node.innerHTML = '<div style="color:#64748b;font-size:12px;padding:8px">Loading chart...</div>'
+
+    importG2ChartComponent()
+      .then(() => {
+        if (G2ChartComponent) {
+          const root = ReactDOM.createRoot(node);
+          root.render(<G2ChartComponent {...value} />);
+        }
+      })
+      .catch(() => {
+        node.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:8px">Failed to load chart.</div>'
+      })
     return node;
   }
 
