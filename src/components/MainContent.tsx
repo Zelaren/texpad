@@ -15,7 +15,6 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   const [showToolbar, setShowToolbar] = useState(false)
   const [currentLine, setCurrentLine] = useState(0)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
-  const rafHandleRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!quillInstance.current) {
@@ -175,23 +174,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     }
   }
 
-  // 鼠标移动行定位并让光标跟随
-  const setCaretToLineStart = (lineNumber: number) => {
-    if (!quillInstance.current) return
-    const q: any = quillInstance.current as any
-    const lines = q.getLines(0, Number.MAX_SAFE_INTEGER) || []
-    if (lines.length === 0) {
-      q.setSelection(0, 0, Quill.sources.SILENT)
-      return
-    }
-    const clamped = Math.max(0, Math.min(lineNumber, lines.length - 1))
-    let index = 0
-    for (let i = 0; i < clamped; i++) {
-      const len = typeof lines[i]?.length === 'function' ? lines[i].length() : 1
-      index += len
-    }
-    q.setSelection(index, 0, Quill.sources.SILENT)
-  }
+  // 鼠标移动仅更新当前行号
 
   const handleEditorMouseMove: React.MouseEventHandler<HTMLDivElement> = (e) => {
     if (!quillInstance.current) return
@@ -201,11 +184,67 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     const lineHeight = 30
     const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
     setCurrentLine(lineNum)
+  }
 
-    if (rafHandleRef.current) cancelAnimationFrame(rafHandleRef.current)
-    rafHandleRef.current = requestAnimationFrame(() => {
-      setCaretToLineStart(lineNum)
-    })
+  const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
+    if (!quillInstance.current) return
+    const root = quillInstance.current.root as HTMLElement
+    const rect = root.getBoundingClientRect()
+    const lineHeight = 30
+    const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
+
+    // 计算该行的起始 index
+    const q: any = quillInstance.current as any
+    const lines = q.getLines(0, Number.MAX_SAFE_INTEGER) || []
+    if (lines.length === 0) {
+      quillInstance.current.setSelection(0, 0, Quill.sources.SILENT)
+      return
+    }
+    const clamped = Math.max(0, Math.min(lineNum, lines.length - 1))
+
+    let startIndex = 0
+    for (let i = 0; i < clamped; i++) {
+      const len = typeof lines[i]?.length === 'function' ? lines[i].length() : 1
+      startIndex += (len + 1) // 包含换行
+    }
+    const lineLen = typeof lines[clamped]?.length === 'function' ? lines[clamped].length() : 0
+
+    // 空行：直接定位到行首
+    if (lineLen === 0) {
+      e.preventDefault()
+      quillInstance.current.focus()
+      requestAnimationFrame(() => quillInstance.current!.setSelection(startIndex, 0, Quill.sources.SILENT))
+      return
+    }
+
+    // 根据水平位置定位到最近字符（二分查找）
+    const targetX = e.clientX - rect.left
+    let low = 0
+    let high = lineLen
+    let bestOffset = 0
+    let bestDist = Number.POSITIVE_INFINITY
+    const getLeftAt = (offset: number) => {
+      const b = quillInstance.current!.getBounds(startIndex + offset)
+      return (b && typeof b.left === 'number') ? b.left : 0
+    }
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2)
+      const left = getLeftAt(mid)
+      const dist = Math.abs(left - targetX)
+      if (dist < bestDist) {
+        bestDist = dist
+        bestOffset = mid
+      }
+      if (left < targetX) {
+        low = mid + 1
+      } else {
+        high = mid - 1
+      }
+    }
+
+    e.preventDefault()
+    quillInstance.current.focus()
+    requestAnimationFrame(() => quillInstance.current!.setSelection(startIndex + bestOffset, 0, Quill.sources.SILENT))
   }
 
   // 插入一个 AntV/G2 示例到编辑器
@@ -311,7 +350,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         </div>
 
         {/* 编辑器容器 - 移除边框和内边距 */}
-        <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove}>
+        <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove} onMouseDown={handleEditorMouseDown}>
           <div
             ref={quillRef}
             className="w-full min-h-full outline-none quill-editor"
@@ -387,19 +426,30 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
             line-height: 30px !important;
             margin: 0 !important;
             padding: 0 !important;
-            list-style-position: outside !important;
-          }
-
-          .ql-editor ol li {
-            list-style-type: decimal !important;
-          }
-
-          .ql-editor ul li {
-            list-style-type: disc !important;
           }
 
           .ql-editor .ql-indent-1 {
             padding-left: 3em !important;
+          }
+
+          /* 为图表与图片添加白底与边框，遮挡背景分割线 */
+          .ql-editor .quill-chart-embed {
+            background: #ffffff !important;
+            border: 1px solid #e5e7eb !important; /* gray-200 */
+            border-radius: 6px !important;
+            padding: 8px !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            position: relative;
+          }
+
+          .ql-editor img {
+            display: block;
+            background: #ffffff !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 4px !important;
+            padding: 4px !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            max-width: 100%;
           }
         `
       }} />
