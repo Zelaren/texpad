@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Quill from 'quill'
 // import { Chart } from '@antv/g2' // Remove G2 Chart import
-import OpenAI from 'openai' // Import OpenAI
 import ChartBlot from '../utils/ChartBlot' // Import ChartBlot
 import 'quill/dist/quill.snow.css' // Import Quill styles
 
@@ -9,15 +8,14 @@ interface MainContentProps {
   quillInstance: React.MutableRefObject<Quill | null>
 }
 
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY || '', // This is the default and can be omitted
-  dangerouslyAllowBrowser: true, // Allow usage in browser environment
-})
+// AI 生成功能暂未实现
 
 const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   const quillRef = useRef(null)
   const [showToolbar, setShowToolbar] = useState(false)
   const [currentLine, setCurrentLine] = useState(0)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const rafHandleRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!quillInstance.current) {
@@ -67,12 +65,12 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
 
         // 添加演示内容来验证格式化功能
         const demoContent = [
-          { insert: '欢迎使用图文图表制作工具', attributes: { header: 1 } },
-          { insert: '\n' },
-          { insert: '这是一个功能演示文档', attributes: { header: 2 } },
-          { insert: '\n' },
-          { insert: '小标题示例', attributes: { header: 3 } },
-          { insert: '\n' },
+          { insert: '欢迎使用图文图表制作工具' },
+          { insert: '\n', attributes: { header: 1 } },
+          { insert: '这是一个功能演示文档' },
+          { insert: '\n', attributes: { header: 2 } },
+          { insert: '小标题示例' },
+          { insert: '\n', attributes: { header: 3 } },
           { insert: '这是普通段落文本，用于展示正常的文字显示效果。' },
           { insert: '\n' },
           { insert: '这是粗体文本', attributes: { bold: true } },
@@ -84,19 +82,21 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
           { insert: '\n' },
           { insert: '有序列表示例：' },
           { insert: '\n' },
-          { insert: '第一项内容', attributes: { list: 'ordered' } },
-          { insert: '\n' },
-          { insert: '第二项内容', attributes: { list: 'ordered' } },
-          { insert: '\n' },
-          { insert: '第三项内容', attributes: { list: 'ordered' } },
+          { insert: '第一项内容' },
+          { insert: '\n', attributes: { list: 'ordered' } },
+          { insert: '第二项内容' },
+          { insert: '\n', attributes: { list: 'ordered' } },
+          { insert: '第三项内容' },
+          { insert: '\n', attributes: { list: 'ordered' } },
           { insert: '\n' },
           { insert: '无序列表示例：' },
           { insert: '\n' },
-          { insert: '项目一', attributes: { list: 'bullet' } },
-          { insert: '\n' },
-          { insert: '项目二', attributes: { list: 'bullet' } },
-          { insert: '\n' },
-          { insert: '项目三', attributes: { list: 'bullet' } },
+          { insert: '项目一' },
+          { insert: '\n', attributes: { list: 'bullet' } },
+          { insert: '项目二' },
+          { insert: '\n', attributes: { list: 'bullet' } },
+          { insert: '项目三' },
+          { insert: '\n', attributes: { list: 'bullet' } },
           { insert: '\n' },
           { insert: '点击左侧的 + 按钮可以添加更多格式或插入图表。' },
           { insert: '\n' }
@@ -126,6 +126,10 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         quillInstance.current.format('italic', !currentFormat.italic)
       } else if (format === 'list') {
         quillInstance.current.format('list', value)
+      } else if (format === 'normal') {
+        // 恢复为普通段落
+        quillInstance.current.format('header', false)
+        quillInstance.current.format('list', false)
       }
 
       // 保持选择状态，让用户可以继续输入
@@ -138,44 +142,73 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     setShowToolbar(false)
   }
 
-  const handleGenerateChart = async () => {
-    if (!quillInstance.current) return
-
-    const userPrompt = "generate monthly sales data for 2023 for a bar chart."
-
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant that generates G2 chart data in JSON format based on user prompts. Provide an array of objects, each with 'category' and 'value' fields, and a chart type (line or interval). Ensure the output is valid JSON and directly usable by G2. Do not include any explanation, just the JSON object containing data and type."
-          },
-          {
-            role: "user",
-            content: `Generate G2 chart data for the following request: ${userPrompt}. Example format: { \"data\": [{ \"category\": \"Jan\", \"value\": 10 }, { \"category\": \"Feb\", \"value\": 20 }], \"type\": \"interval\", \"xField\": \"category\", \"yField\": \"value\" }`
-          }
-        ],
-        response_format: { type: "json_object" },
-      })
-
-      const chartDataContent = response.choices[0]?.message?.content
-
-      if (chartDataContent) {
-        try {
-          const chartConfig = JSON.parse(chartDataContent)
-          const range = quillInstance.current.getSelection(true);
-          quillInstance.current.insertEmbed(range.index, 'chart', chartConfig, Quill.sources.USER);
-          quillInstance.current.setSelection(range.index + 1, Quill.sources.SILENT);
-        } catch (error) {
-          console.error("Failed to parse OpenAI response as chart config:", error)
-        }
-      }
-    } catch (error) {
-      console.error("OpenAI API call failed:", error)
-    }
-    setShowToolbar(false)
+  // 图片上传并插入到编辑器
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
   }
+
+  const handleImageUploadClick = () => {
+    imageInputRef.current?.click()
+  }
+
+  const handleImageFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    if (!quillInstance.current) return
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const dataUrl = await readFileAsDataURL(file)
+      const range = quillInstance.current.getSelection(true)
+      const insertIndex = range ? range.index : quillInstance.current.getLength()
+      quillInstance.current.insertEmbed(insertIndex, 'image', dataUrl, Quill.sources.USER)
+      quillInstance.current.setSelection(insertIndex + 1, 0, Quill.sources.SILENT)
+    } catch (err) {
+      console.error('Failed to insert image:', err)
+    } finally {
+      // 清空 input 以便下次选择同一文件也会触发 change
+      if (imageInputRef.current) imageInputRef.current.value = ''
+      setShowToolbar(false)
+    }
+  }
+
+  // 鼠标移动行定位并让光标跟随
+  const setCaretToLineStart = (lineNumber: number) => {
+    if (!quillInstance.current) return
+    const q: any = quillInstance.current as any
+    const lines = q.getLines(0, Number.MAX_SAFE_INTEGER) || []
+    if (lines.length === 0) {
+      q.setSelection(0, 0, Quill.sources.SILENT)
+      return
+    }
+    const clamped = Math.max(0, Math.min(lineNumber, lines.length - 1))
+    let index = 0
+    for (let i = 0; i < clamped; i++) {
+      const len = typeof lines[i]?.length === 'function' ? lines[i].length() : 1
+      index += len
+    }
+    q.setSelection(index, 0, Quill.sources.SILENT)
+  }
+
+  const handleEditorMouseMove: React.MouseEventHandler<HTMLDivElement> = (e) => {
+    if (!quillInstance.current) return
+    const root = quillInstance.current.root as HTMLElement
+    const rect = root.getBoundingClientRect()
+    if (e.clientY < rect.top || e.clientY > rect.bottom) return
+    const lineHeight = 30
+    const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
+    setCurrentLine(lineNum)
+
+    if (rafHandleRef.current) cancelAnimationFrame(rafHandleRef.current)
+    rafHandleRef.current = requestAnimationFrame(() => {
+      setCaretToLineStart(lineNum)
+    })
+  }
+
+  // 占位：AI 生成功能暂未实现
 
   // 生成对齐线，间距改为30px
   const generateAlignmentLines = () => {
@@ -214,59 +247,32 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         {/* 工具提示完全显示在左侧空间 */}
         {showToolbar && (
           <div
-            className="absolute right-12 bg-white border border-gray-300 rounded-lg shadow-xl p-4 z-20 flex flex-col space-y-3 w-44"
+            className="absolute right-12 bg-white border border-gray-300 rounded-lg shadow-xl p-4 z-20 flex flex-col space-y-4 w-60"
             style={{
               top: `${currentLine * 30 + 5}px` // 跟随当前行位置
             }}
           >
-            <button
-              onClick={() => handleFormatClick('header', 1)}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left text-xl font-bold"
-            >
-              标题 1
-            </button>
-            <button
-              onClick={() => handleFormatClick('header', 2)}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left text-lg font-bold"
-            >
-              标题 2
-            </button>
-            <button
-              onClick={() => handleFormatClick('header', 3)}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left text-base font-bold"
-            >
-              标题 3
-            </button>
-            <button
-              onClick={() => handleFormatClick('bold')}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left font-bold"
-            >
-              粗体
-            </button>
-            <button
-              onClick={() => handleFormatClick('italic')}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left italic"
-            >
-              斜体
-            </button>
-            <button
-              onClick={() => handleFormatClick('list', 'ordered')}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left"
-            >
-              有序列表
-            </button>
-            <button
-              onClick={() => handleFormatClick('list', 'bullet')}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-left"
-            >
-              无序列表
-            </button>
-            <button
-              onClick={handleGenerateChart}
-              className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded text-left"
-            >
-              插入图表
-            </button>
+            {/* 第一行：T/H1/H2/H3/H4/有序/无序 */}
+            <div className="grid grid-cols-7 gap-2">
+              <button onClick={() => handleFormatClick('normal')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">T</button>
+              <button onClick={() => handleFormatClick('header', 1)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H1</button>
+              <button onClick={() => handleFormatClick('header', 2)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H2</button>
+              <button onClick={() => handleFormatClick('header', 3)} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H3</button>
+              <button onClick={() => handleFormatClick('normal')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">H4</button>
+              <button onClick={() => handleFormatClick('list', 'ordered')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">有序</button>
+              <button onClick={() => handleFormatClick('list', 'bullet')} className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-center">无序</button>
+            </div>
+
+            {/* 第二行：上传图片 */}
+            <div className="flex items-center">
+              <button onClick={handleImageUploadClick} className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-center">上传图片</button>
+              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileChange} />
+            </div>
+
+            {/* 第三行：AI生成（占位，暂不实现） */}
+            <div className="flex items-center">
+              <button disabled className="flex-1 px-3 py-2 bg-gray-100 text-gray-400 rounded text-center cursor-not-allowed">AI 生成（暂未实现）</button>
+            </div>
           </div>
         )}
       </div>
@@ -279,7 +285,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         </div>
 
         {/* 编辑器容器 - 移除边框和内边距 */}
-        <div className="relative z-10 h-full">
+        <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove}>
           <div
             ref={quillRef}
             className="w-full min-h-full outline-none quill-editor"
