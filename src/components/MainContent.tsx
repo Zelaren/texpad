@@ -208,6 +208,31 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     })
   }
 
+  // 插入一个 AntV/G2 示例到编辑器
+  const handleInsertSampleChart = () => {
+    if (!quillInstance.current) return
+    const sampleConfig = {
+      data: [
+        { category: 'Jan', value: 120 },
+        { category: 'Feb', value: 200 },
+        { category: 'Mar', value: 150 },
+        { category: 'Apr', value: 80 },
+        { category: 'May', value: 170 },
+        { category: 'Jun', value: 220 },
+      ],
+      type: 'interval',
+      xField: 'category',
+      yField: 'value',
+    }
+    const range = quillInstance.current.getSelection(true)
+    const insertIndex = range ? range.index : quillInstance.current.getLength()
+    quillInstance.current.insertEmbed(insertIndex, 'chart', sampleConfig, Quill.sources.USER)
+    // 在图表后补一个换行，便于继续输入
+    quillInstance.current.insertText(insertIndex + 1, '\n', Quill.sources.SILENT)
+    quillInstance.current.setSelection(insertIndex + 2, 0, Quill.sources.SILENT)
+    setShowToolbar(false)
+  }
+
   // 占位：AI 生成功能暂未实现
 
   // 生成对齐线，间距改为30px
@@ -269,9 +294,10 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
               <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileChange} />
             </div>
 
-            {/* 第三行：AI生成（占位，暂不实现） */}
-            <div className="flex items-center">
-              <button disabled className="flex-1 px-3 py-2 bg-gray-100 text-gray-400 rounded text-center cursor-not-allowed">AI 生成（暂未实现）</button>
+            {/* 第三行：插入示例图表 + AI 生成（占位） */}
+            <div className="grid grid-cols-2 gap-2 items-center">
+              <button onClick={handleInsertSampleChart} className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded text-center">插入示例图表</button>
+              <button disabled className="px-3 py-2 bg-gray-100 text-gray-400 rounded text-center cursor-not-allowed">AI 生成（暂未实现）</button>
             </div>
           </div>
         )}
