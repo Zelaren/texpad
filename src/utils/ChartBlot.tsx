@@ -3,7 +3,16 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import Quill from 'quill'
 import type { ChartData } from '../types/chart'
-const BlockEmbed = Quill.import('blots/block/embed')
+
+// 导入BlockEmbed类型
+const BlockEmbed = Quill.import('blots/block/embed') as {
+  new (...args: any[]): Quill.Blot
+  blotName: string
+  className: string
+  tagName: string
+  create(value?: any): HTMLElement
+  value(domNode: HTMLElement): any
+}
 
 // We need to dynamically import G2ChartComponent to avoid circular dependencies
 // and ensure it's loaded only when needed.
@@ -16,7 +25,7 @@ const importG2ChartComponent = async () => {
   }
 }
 
-class ChartBlot extends (BlockEmbed as any) {
+class ChartBlot extends BlockEmbed {
   static blotName = 'chart';
   static className = 'quill-chart-embed';
   static tagName = 'div';

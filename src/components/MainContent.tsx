@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Quill from 'quill'
 import ChartBlot from '../utils/ChartBlot'
 import 'quill/dist/quill.snow.css'
@@ -92,7 +92,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     quillInstance.current.setContents(demoContent)
   }, [quillInstance, setCurrentLine])
 
-  const handleFormatClick = (format: string, value?: number | string | boolean) => {
+  const handleFormatClick = useCallback((format: string, value?: number | string | boolean) => {
     if (!quillInstance.current) return
 
     const range = quillInstance.current.getSelection()
@@ -124,7 +124,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         }
       }, 10)
     }
-  }
+  }, [])
 
   // 图片上传并插入到编辑器
   const readFileAsDataURL = (file: File): Promise<string> => {
@@ -136,11 +136,11 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     })
   }
 
-  const handleImageUploadClick = () => {
+  const handleImageUploadClick = useCallback(() => {
     imageInputRef.current?.click()
-  }
+  }, [])
 
-  const handleImageFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+  const handleImageFileChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(async (e) => {
     if (!quillInstance.current) return
     const file = e.target.files?.[0]
     if (!file) return
@@ -153,13 +153,13 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     } catch (err) {
       console.error('Failed to insert image:', err)
     } finally {
-      // 清空 input 以便下次选择同一文件也会触发 change
+      // 清空input 以便下次选择同一文件也会触发 change
       if (imageInputRef.current) imageInputRef.current.value = ''
     }
-  }
+  }, [])
 
   
-  const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
+  const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = useCallback((e) => {
     const editor = quillInstance.current
     if (!editor) return
 
@@ -198,10 +198,10 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         }
       }
     }, 10)
-  }
+  }, [setCurrentLine])
 
   // 插入一个 AntV/G2 示例到编辑器
-  const handleInsertSampleChart = () => {
+  const handleInsertSampleChart = useCallback(() => {
     if (!quillInstance.current) return
     const sampleConfig = {
       data: [
@@ -222,7 +222,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     // 在图表后补一个换行，便于继续输入
     quillInstance.current.insertText(insertIndex + 1, '\n', Quill.sources.SILENT)
     quillInstance.current.setSelection(insertIndex + 2, 0, Quill.sources.SILENT)
-  }
+  }, [])
 
   // 占位：AI 生成功能暂未实现
 
