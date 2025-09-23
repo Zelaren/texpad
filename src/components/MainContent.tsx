@@ -13,10 +13,28 @@ interface MainContentProps {
 
 // AI 生成功能暂未实现
 
+const LINE_HEIGHT_PX = 30
+const HEADER_LINE_SPANS = {
+  h1: 3,
+  h2: 2,
+  h3: 2,
+  h4: 1,
+} as const
+
+type QuillLine = {
+  length(): number
+  domNode?: HTMLElement | null
+}
+
+type QuillWithHelpers = Quill & {
+  getLines: (index: number, length: number) => QuillLine[]
+  getIndex: (line: QuillLine) => number
+}
+
 const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [showToolbar, setShowToolbar] = useState(false)
-  const { currentLine, setCurrentLine } = useLineAlignment(30)
+  const { currentLine, setCurrentLine } = useLineAlignment(LINE_HEIGHT_PX)
   const { containerRef } = useQuillEditor(quillInstance, {
     beforeCreate: () => {
       Quill.register({ 'formats/chart': ChartBlot })
@@ -30,8 +48,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
       if (range) {
         const bounds = quillInstance.current!.getBounds(range.index)
         if (bounds) {
-          const lineHeight = 30
-          const currentLineNumber = Math.floor((bounds.top + bounds.height / 2) / lineHeight)
+          const currentLineNumber = Math.floor((bounds.top + bounds.height / 2) / LINE_HEIGHT_PX)
           setCurrentLine(currentLineNumber)
         }
       } else {
@@ -40,7 +57,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     })
 
     const editorElement = quillInstance.current.root as HTMLElement
-    editorElement.style.lineHeight = '30px'
+    editorElement.style.lineHeight = `${LINE_HEIGHT_PX}px`
     editorElement.style.fontSize = '14px'
 
     const demoContent = [
@@ -83,7 +100,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     quillInstance.current.setContents(demoContent)
   }, [quillInstance, setCurrentLine])
 
-  const handleFormatClick = (format: string, value?: any) => {
+  const handleFormatClick = (format: string, value?: number | string | boolean) => {
     if (!quillInstance.current) return
 
     const range = quillInstance.current.getSelection()
@@ -156,113 +173,165 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     const root = quillInstance.current.root as HTMLElement
     const rect = root.getBoundingClientRect()
     if (e.clientY < rect.top || e.clientY > rect.bottom) return
-    const lineHeight = 30
-    const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
+    const lineNum = Math.floor((e.clientY - rect.top) / LINE_HEIGHT_PX)
     setCurrentLine(lineNum)
   }
 
   const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
-    if (!quillInstance.current) return
-    const root = quillInstance.current.root as HTMLElement
+    const editor = quillInstance.current
+    if (!editor) return
+
+    const root = editor.root as HTMLElement
     const rect = root.getBoundingClientRect()
-    const lineHeight = 30
-    const lineNum = Math.floor((e.clientY - rect.top) / lineHeight)
+    const relativeX = e.clientX - rect.left
+    const relativeY = e.clientY - rect.top
 
-    // 计算该“逻辑行”的起始 index（修正换行符计数）
-    const q: any = quillInstance.current as any
-    const lines = q.getLines(0, Number.MAX_SAFE_INTEGER) || []
+    const quillWithHelpers = editor as unknown as QuillWithHelpers
+    const lines = typeof quillWithHelpers.getLines === 'function'
+      ? quillWithHelpers.getLines(0, Number.MAX_SAFE_INTEGER)
+      : []
     if (lines.length === 0) {
-      quillInstance.current.setSelection(0, 0, Quill.sources.SILENT)
+      editor.setSelection(0, 0, Quill.sources.SILENT)
       return
     }
-    const clamped = Math.max(0, Math.min(lineNum, lines.length - 1))
 
-    let startIndex = 0
-    for (let i = 0; i < clamped; i++) {
-      const len = typeof lines[i]?.length === 'function' ? lines[i].length() : 0
-      startIndex += len // Quill 行长度已包含换行，无需额外 +1
+    const spans: number[] = lines.map((line) => {
+      const node = line?.domNode as HTMLElement | null
+      const height = node?.offsetHeight ?? LINE_HEIGHT_PX
+      const span = Math.round(height / LINE_HEIGHT_PX)
+      return Number.isFinite(span) && span > 0 ? span : 1
+    })
+
+    const totalSlots = spans.reduce((sum, span) => sum + span, 0)
+    const rawSlot = Math.floor(relativeY / LINE_HEIGHT_PX)
+    const clampedSlot = Math.max(0, Math.min(rawSlot, Math.max(totalSlots - 1, 0)))
+    setCurrentLine(clampedSlot)
+
+    let slotStart = 0
+    let targetLineIndex = 0
+    for (let i = 0; i < spans.length; i++) {
+      const span = spans[i]
+      const slotEnd = slotStart + span - 1
+      if (clampedSlot <= slotEnd) {
+        targetLineIndex = i
+        break
+      }
+      slotStart = slotEnd + 1
     }
-    const rawLineLen = typeof lines[clamped]?.length === 'function' ? lines[clamped].length() : 0
-    const visibleLen = Math.max(0, rawLineLen - 1) // 去除行尾换行
 
-    // 空行：直接定位到行首
+    const line = lines[targetLineIndex]
+    const lineLength = typeof line.length === 'function' ? line.length() : 0
+    const lineStartIndex = typeof quillWithHelpers.getIndex === 'function'
+      ? quillWithHelpers.getIndex(line)
+      : lines.slice(0, targetLineIndex).reduce((sum, l) => sum + (typeof l.length === 'function' ? l.length() : 0), 0)
+
+    const visibleLen = Math.max(0, lineLength - 1)
+
+    const blockSpan = spans[targetLineIndex] ?? 1
+    const blockTop = slotStart * LINE_HEIGHT_PX
+    const blockBottom = (slotStart + blockSpan) * LINE_HEIGHT_PX
+    const clampedY = Math.min(Math.max(relativeY, blockTop), blockBottom - 1)
+
+    const getBounds = (offset: number) => editor.getBounds(lineStartIndex + offset)
+    const getLeft = (offset: number) => {
+      const bounds = getBounds(offset)
+      return typeof bounds.left === 'number' ? bounds.left : 0
+    }
+    const getTop = (offset: number) => {
+      const bounds = getBounds(offset)
+      return typeof bounds.top === 'number' ? bounds.top : 0
+    }
+
+    const scheduleSelection = (index: number) => {
+      requestAnimationFrame(() => editor.setSelection(index, 0, Quill.sources.SILENT))
+    }
+
+    editor.focus()
+
     if (visibleLen === 0) {
-      e.preventDefault()
-      quillInstance.current.focus()
-      requestAnimationFrame(() => quillInstance.current!.setSelection(startIndex, 0, Quill.sources.SILENT))
+      scheduleSelection(lineStartIndex)
       return
     }
 
-    const targetX = e.clientX - rect.left
-    const targetY = e.clientY - rect.top
+    const firstLeft = getLeft(0)
+    const lastLeft = getLeft(visibleLen)
+    const clampedX = Math.max(relativeX, 0)
 
-    const getBoundsAt = (offset: number) => {
-      const b = quillInstance.current!.getBounds(startIndex + offset)
-      return {
-        left: (b && typeof b.left === 'number') ? b.left : 0,
-        top: (b && typeof b.top === 'number') ? b.top : 0,
+    requestAnimationFrame(() => {
+      const currentRange = editor.getSelection()
+      const endIndex = lineStartIndex + visibleLen
+
+      if (clampedX <= firstLeft) {
+        scheduleSelection(lineStartIndex)
+        return
       }
-    }
 
-    // 先按垂直位置找到最接近的“软换行”行（top 最接近）
-    let lowV = 0
-    let highV = visibleLen
-    let bestByTopOffset = 0
-    let bestTopDist = Number.POSITIVE_INFINITY
-    while (lowV <= highV) {
-      const mid = Math.floor((lowV + highV) / 2)
-      const { top } = getBoundsAt(mid)
-      const dist = Math.abs(top - targetY)
-      if (dist < bestTopDist) {
-        bestTopDist = dist
-        bestByTopOffset = mid
+      if (clampedX >= lastLeft) {
+        scheduleSelection(endIndex)
+        return
       }
-      if (top < targetY) {
-        lowV = mid + 1
-      } else {
-        highV = mid - 1
+
+      if (!currentRange || currentRange.index < lineStartIndex || currentRange.index > endIndex) {
+        const rowOffsets: number[] = []
+        let low = 0
+        let high = visibleLen
+        let bestByTop = 0
+        let bestTopDist = Number.POSITIVE_INFINITY
+        while (low <= high) {
+          const mid = Math.floor((low + high) / 2)
+          const top = getTop(mid)
+          const dist = Math.abs(top - clampedY)
+          if (dist < bestTopDist) {
+            bestTopDist = dist
+            bestByTop = mid
+          }
+          if (top < clampedY) {
+            low = mid + 1
+          } else {
+            high = mid - 1
+          }
+        }
+
+        const targetTop = getTop(bestByTop)
+        let rowStart = bestByTop
+        while (rowStart > 0 && getTop(rowStart - 1) === targetTop) {
+          rowStart -= 1
+        }
+        let rowEnd = bestByTop
+        while (rowEnd < visibleLen && getTop(rowEnd + 1) === targetTop) {
+          rowEnd += 1
+        }
+
+        for (let i = rowStart; i <= rowEnd; i++) {
+          rowOffsets.push(i)
+        }
+
+        let chosenOffset = rowStart
+        for (let i = 0; i < rowOffsets.length; i++) {
+          const offset = rowOffsets[i]
+          const left = getLeft(offset)
+          const nextLeft = offset < rowEnd ? getLeft(offset + 1) : lastLeft
+          if (clampedX >= left && clampedX < nextLeft) {
+            const midpoint = left + (nextLeft - left) / 2
+            chosenOffset = clampedX > midpoint ? Math.min(offset + 1, rowEnd) : offset
+            break
+          }
+        }
+
+        scheduleSelection(lineStartIndex + chosenOffset)
+        return
       }
-    }
 
-    const rowTop = getBoundsAt(bestByTopOffset).top
-
-    // 扩展找到该行（相同 top）的起止 offset
-    let rowStart = bestByTopOffset
-    while (rowStart > 0) {
-      const { top } = getBoundsAt(rowStart - 1)
-      if (top !== rowTop) break
-      rowStart -= 1
-    }
-    let rowEnd = bestByTopOffset
-    while (rowEnd < visibleLen) {
-      const { top } = getBoundsAt(rowEnd + 1)
-      if (top !== rowTop) break
-      rowEnd += 1
-    }
-
-    // 在当前软行内按水平位置二分查找
-    let lowH = rowStart
-    let highH = rowEnd
-    let bestOffset = rowStart
-    let bestLeftDist = Number.POSITIVE_INFINITY
-    while (lowH <= highH) {
-      const mid = Math.floor((lowH + highH) / 2)
-      const { left } = getBoundsAt(mid)
-      const dist = Math.abs(left - targetX)
-      if (dist < bestLeftDist) {
-        bestLeftDist = dist
-        bestOffset = mid
+      if (lineLength === 1 && currentRange.index !== lineStartIndex) {
+        scheduleSelection(lineStartIndex)
+        return
       }
-      if (left < targetX) {
-        lowH = mid + 1
-      } else {
-        highH = mid - 1
-      }
-    }
 
-    e.preventDefault()
-    quillInstance.current.focus()
-    requestAnimationFrame(() => quillInstance.current!.setSelection(startIndex + bestOffset, 0, Quill.sources.SILENT))
+      if (clampedX > lastLeft) {
+        scheduleSelection(endIndex)
+        return
+      }
+    })
   }
 
   // 插入一个 AntV/G2 示例到编辑器
@@ -304,14 +373,14 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         {/* 工具按钮，紧贴右侧分割线 */}
         <button
           className="absolute right-2 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm hover:bg-blue-700 opacity-50 hover:opacity-100 transition-opacity"
-          style={{ top: `${currentLine * 30 + 12}px` }} // 调整为30px间距，与信笺行中心对齐
+          style={{ top: `${currentLine * LINE_HEIGHT_PX + 12}px` }} // 调整为固定行距
         >
           +
         </button>
 
         {/* 工具提示完全显示在左侧空间 */}
         <InlineToolbar
-          topPx={currentLine * 30 + 5}
+          topPx={currentLine * LINE_HEIGHT_PX + 5}
           visible={showToolbar}
           onFormat={handleFormatClick}
           onUploadImage={handleImageUploadClick}
@@ -324,7 +393,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
       {/* 主要内容区域 - 移除外框和边框 */}
       <div className="flex-1 bg-white relative overflow-hidden">
         {/* 对齐线背景 */}
-        <AlignmentGuides lineHeightPx={30} totalLines={100} />
+        <AlignmentGuides lineHeightPx={LINE_HEIGHT_PX} totalLines={100} />
 
         {/* 编辑器容器 - 移除边框和内边距 */}
         <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove} onMouseDown={handleEditorMouseDown}>
@@ -347,37 +416,67 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
           .ql-editor {
             border: none !important;
             padding: 0 !important;
+            font-size: 14px !important;
+            line-height: ${LINE_HEIGHT_PX}px !important;
           }
 
-          .ql-editor h1 {
-            font-size: 2em !important;
-            font-weight: bold !important;
-            line-height: 30px !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-
-          .ql-editor h2 {
-            font-size: 1.5em !important;
-            font-weight: bold !important;
-            line-height: 30px !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-
-          .ql-editor h3 {
-            font-size: 1.17em !important;
-            font-weight: bold !important;
-            line-height: 30px !important;
+          .ql-editor p,
+          .ql-editor li,
+          .ql-editor ol,
+          .ql-editor ul {
+            line-height: ${LINE_HEIGHT_PX}px !important;
             margin: 0 !important;
             padding: 0 !important;
           }
 
           .ql-editor p {
-            line-height: 30px !important;
+            font-size: 14px !important;
+          }
+
+          .ql-editor ol,
+          .ql-editor ul {
+            padding-left: 2em !important;
+          }
+
+          .ql-editor li {
+            padding-left: 0 !important;
+          }
+
+          .ql-editor .ql-indent-1 {
+            padding-left: 3em !important;
+          }
+
+          .ql-editor h1,
+          .ql-editor h2,
+          .ql-editor h3,
+          .ql-editor h4 {
+            display: flex;
+            align-items: flex-end;
+            box-sizing: border-box;
+            font-weight: 700 !important;
+            line-height: ${LINE_HEIGHT_PX}px !important;
             margin: 0 !important;
             padding: 0 !important;
-            font-size: 14px !important;
+          }
+
+          .ql-editor h1 {
+            font-size: 28px !important;
+            min-height: ${HEADER_LINE_SPANS.h1 * LINE_HEIGHT_PX}px !important;
+          }
+
+          .ql-editor h2 {
+            font-size: 22px !important;
+            min-height: ${HEADER_LINE_SPANS.h2 * LINE_HEIGHT_PX}px !important;
+          }
+
+          .ql-editor h3 {
+            font-size: 18px !important;
+            min-height: ${HEADER_LINE_SPANS.h3 * LINE_HEIGHT_PX}px !important;
+          }
+
+          .ql-editor h4 {
+            font-size: 16px !important;
+            min-height: ${HEADER_LINE_SPANS.h4 * LINE_HEIGHT_PX}px !important;
           }
 
           .ql-editor strong {
@@ -386,23 +485,6 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
 
           .ql-editor em {
             font-style: italic !important;
-          }
-
-          .ql-editor ol, .ql-editor ul {
-            line-height: 30px !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            padding-left: 2em !important;
-          }
-
-          .ql-editor li {
-            line-height: 30px !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-
-          .ql-editor .ql-indent-1 {
-            padding-left: 3em !important;
           }
 
           /* 为图表与图片添加白底与边框，遮挡背景分割线 */
