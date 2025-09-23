@@ -26,7 +26,7 @@ const HEADER_LINE_SPANS = {
 const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [showToolbar, setShowToolbar] = useState(false)
-  const { currentLine, setCurrentLine } = useLineAlignment(LINE_HEIGHT_PX)
+  const { currentLine, setCurrentLine, handleMouseMove } = useLineAlignment(LINE_HEIGHT_PX, quillInstance)
   const { containerRef } = useQuillEditor(quillInstance, {
     beforeCreate: () => {
       Quill.register({ 'formats/chart': ChartBlot })
@@ -158,17 +158,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
     }
   }
 
-  // 鼠标移动仅更新当前行号
-
-  const handleEditorMouseMove: React.MouseEventHandler<HTMLDivElement> = (e) => {
-    if (!quillInstance.current) return
-    const root = quillInstance.current.root as HTMLElement
-    const rect = root.getBoundingClientRect()
-    if (e.clientY < rect.top || e.clientY > rect.bottom) return
-    const lineNum = Math.floor((e.clientY - rect.top) / LINE_HEIGHT_PX)
-    setCurrentLine(lineNum)
-  }
-
+  
   const handleEditorMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
     const editor = quillInstance.current
     if (!editor) return
@@ -272,7 +262,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         <AlignmentGuides lineHeightPx={LINE_HEIGHT_PX} totalLines={100} />
 
         {/* 编辑器容器 - 移除边框和内边距 */}
-        <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove}>
+        <div className="relative z-10 h-full" onMouseMove={handleMouseMove}>
           <div
             ref={containerRef}
             className="w-full min-h-full outline-none quill-editor"
