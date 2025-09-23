@@ -21,15 +21,7 @@ const HEADER_LINE_SPANS = {
   h4: 1,
 } as const
 
-type QuillLine = {
-  length(): number
-  domNode?: HTMLElement | null
-}
 
-type QuillWithHelpers = Quill & {
-  getLines: (index: number, length: number) => QuillLine[]
-  getIndex: (line: QuillLine) => number
-}
 
 const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
   const imageInputRef = useRef<HTMLInputElement | null>(null)
@@ -183,155 +175,39 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
 
     const root = editor.root as HTMLElement
     const rect = root.getBoundingClientRect()
-    const relativeX = e.clientX - rect.left
     const relativeY = e.clientY - rect.top
 
-    const quillWithHelpers = editor as unknown as QuillWithHelpers
-    const lines = typeof quillWithHelpers.getLines === 'function'
-      ? quillWithHelpers.getLines(0, Number.MAX_SAFE_INTEGER)
-      : []
-    if (lines.length === 0) {
-      editor.setSelection(0, 0, Quill.sources.SILENT)
+    // 检查是否点击在现有内容下方
+    const editorHeight = root.scrollHeight
+    const isBeyondContent = relativeY >= editorHeight
+
+    if (isBeyondContent) {
+      // 如果点击在内容下方，定位到文档末尾
+      const lastPosition = editor.getLength()
+      editor.setSelection(lastPosition, 0, Quill.sources.SILENT)
+      editor.focus()
+
+      // 更新当前行号
+      const lastLine = Math.floor(editorHeight / LINE_HEIGHT_PX)
+      setCurrentLine(lastLine)
       return
     }
 
-    const spans: number[] = lines.map((line) => {
-      const node = line?.domNode as HTMLElement | null
-      const height = node?.offsetHeight ?? LINE_HEIGHT_PX
-      const span = Math.round(height / LINE_HEIGHT_PX)
-      return Number.isFinite(span) && span > 0 ? span : 1
-    })
-
-    const totalSlots = spans.reduce((sum, span) => sum + span, 0)
-    const rawSlot = Math.floor(relativeY / LINE_HEIGHT_PX)
-    const clampedSlot = Math.max(0, Math.min(rawSlot, Math.max(totalSlots - 1, 0)))
-    setCurrentLine(clampedSlot)
-
-    let slotStart = 0
-    let targetLineIndex = 0
-    for (let i = 0; i < spans.length; i++) {
-      const span = spans[i]
-      const slotEnd = slotStart + span - 1
-      if (clampedSlot <= slotEnd) {
-        targetLineIndex = i
-        break
-      }
-      slotStart = slotEnd + 1
-    }
-
-    const line = lines[targetLineIndex]
-    const lineLength = typeof line.length === 'function' ? line.length() : 0
-    const lineStartIndex = typeof quillWithHelpers.getIndex === 'function'
-      ? quillWithHelpers.getIndex(line)
-      : lines.slice(0, targetLineIndex).reduce((sum, l) => sum + (typeof l.length === 'function' ? l.length() : 0), 0)
-
-    const visibleLen = Math.max(0, lineLength - 1)
-
-    const blockSpan = spans[targetLineIndex] ?? 1
-    const blockTop = slotStart * LINE_HEIGHT_PX
-    const blockBottom = (slotStart + blockSpan) * LINE_HEIGHT_PX
-    const clampedY = Math.min(Math.max(relativeY, blockTop), blockBottom - 1)
-
-    const getBounds = (offset: number) => editor.getBounds(lineStartIndex + offset)
-    const getLeft = (offset: number) => {
-      const bounds = getBounds(offset)
-      return typeof bounds.left === 'number' ? bounds.left : 0
-    }
-    const getTop = (offset: number) => {
-      const bounds = getBounds(offset)
-      return typeof bounds.top === 'number' ? bounds.top : 0
-    }
-
-    const scheduleSelection = (index: number) => {
-      requestAnimationFrame(() => editor.setSelection(index, 0, Quill.sources.SILENT))
-    }
-
+    // 对于内容区域内的点击，让浏览器处理默认行为
+    // 然后通过 selection-change 事件来更新行号
     editor.focus()
 
-    if (visibleLen === 0) {
-      scheduleSelection(lineStartIndex)
-      return
-    }
-
-    const firstLeft = getLeft(0)
-    const lastLeft = getLeft(visibleLen)
-    const clampedX = Math.max(relativeX, 0)
-
-    requestAnimationFrame(() => {
-      const currentRange = editor.getSelection()
-      const endIndex = lineStartIndex + visibleLen
-
-      if (clampedX <= firstLeft) {
-        scheduleSelection(lineStartIndex)
-        return
-      }
-
-      if (clampedX >= lastLeft) {
-        scheduleSelection(endIndex)
-        return
-      }
-
-      if (!currentRange || currentRange.index < lineStartIndex || currentRange.index > endIndex) {
-        const rowOffsets: number[] = []
-        let low = 0
-        let high = visibleLen
-        let bestByTop = 0
-        let bestTopDist = Number.POSITIVE_INFINITY
-        while (low <= high) {
-          const mid = Math.floor((low + high) / 2)
-          const top = getTop(mid)
-          const dist = Math.abs(top - clampedY)
-          if (dist < bestTopDist) {
-            bestTopDist = dist
-            bestByTop = mid
-          }
-          if (top < clampedY) {
-            low = mid + 1
-          } else {
-            high = mid - 1
-          }
+    // 延迟检查光标位置，确保浏览器已经完成默认定位
+    setTimeout(() => {
+      const range = editor.getSelection()
+      if (range) {
+        const bounds = editor.getBounds(range.index)
+        if (bounds) {
+          const currentLineNumber = Math.floor((bounds.top + bounds.height / 2) / LINE_HEIGHT_PX)
+          setCurrentLine(currentLineNumber)
         }
-
-        const targetTop = getTop(bestByTop)
-        let rowStart = bestByTop
-        while (rowStart > 0 && getTop(rowStart - 1) === targetTop) {
-          rowStart -= 1
-        }
-        let rowEnd = bestByTop
-        while (rowEnd < visibleLen && getTop(rowEnd + 1) === targetTop) {
-          rowEnd += 1
-        }
-
-        for (let i = rowStart; i <= rowEnd; i++) {
-          rowOffsets.push(i)
-        }
-
-        let chosenOffset = rowStart
-        for (let i = 0; i < rowOffsets.length; i++) {
-          const offset = rowOffsets[i]
-          const left = getLeft(offset)
-          const nextLeft = offset < rowEnd ? getLeft(offset + 1) : lastLeft
-          if (clampedX >= left && clampedX < nextLeft) {
-            const midpoint = left + (nextLeft - left) / 2
-            chosenOffset = clampedX > midpoint ? Math.min(offset + 1, rowEnd) : offset
-            break
-          }
-        }
-
-        scheduleSelection(lineStartIndex + chosenOffset)
-        return
       }
-
-      if (lineLength === 1 && currentRange.index !== lineStartIndex) {
-        scheduleSelection(lineStartIndex)
-        return
-      }
-
-      if (clampedX > lastLeft) {
-        scheduleSelection(endIndex)
-        return
-      }
-    })
+    }, 10)
   }
 
   // 插入一个 AntV/G2 示例到编辑器
@@ -396,8 +272,13 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
         <AlignmentGuides lineHeightPx={LINE_HEIGHT_PX} totalLines={100} />
 
         {/* 编辑器容器 - 移除边框和内边距 */}
-        <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove} onMouseDown={handleEditorMouseDown}>
-          <div ref={containerRef} className="w-full min-h-full outline-none quill-editor" style={{ padding: '6px 24px' }} />
+        <div className="relative z-10 h-full" onMouseMove={handleEditorMouseMove}>
+          <div
+            ref={containerRef}
+            className="w-full min-h-full outline-none quill-editor"
+            style={{ padding: '6px 24px' }}
+            onMouseDown={handleEditorMouseDown}
+          />
         </div>
       </div>
 
@@ -451,7 +332,7 @@ const MainContent: React.FC<MainContentProps> = ({ quillInstance }) => {
           .ql-editor h3,
           .ql-editor h4 {
             display: flex;
-            align-items: flex-end;
+            align-items: center;
             box-sizing: border-box;
             font-weight: 700 !important;
             line-height: ${LINE_HEIGHT_PX}px !important;
