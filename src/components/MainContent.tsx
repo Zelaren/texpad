@@ -17,7 +17,7 @@ const LINE_HEIGHT_PX = 30
 const HEADER_LINE_SPANS = {
   h1: 3,
   h2: 2,
-  h3: 2,
+  h3: 1,
   h4: 1,
 } as const
 
