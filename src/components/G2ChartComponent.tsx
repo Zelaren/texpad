@@ -58,7 +58,5 @@ const G2ChartComponent: React.FC<G2ChartComponentProps> = React.memo(({ data, ty
 
   return <div ref={chartContainerRef} className="w-full" style={{ height: 300 }} />
 })
-}) />
-}
 
 export default G2ChartComponent
