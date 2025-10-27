@@ -35,6 +35,12 @@ npm run build
 # Code linting and style checking
 npm run lint
 
+# Code formatting with Prettier
+npm run format
+
+# Check code formatting without fixing
+npm run format:check
+
 # Preview production build locally
 npm run preview
 ```
@@ -52,6 +58,12 @@ npx tsc --noEmit
 
 # Check for ESLint violations
 npm run lint
+
+# Format code with Prettier
+npm run format
+
+# Check code formatting without fixing
+npm run format:check
 ```
 
 ## Architecture Overview
@@ -60,15 +72,27 @@ npm run lint
 ```
 src/
 ├── components/
+│   ├── Layout.tsx           # Main application layout with sidebar
+│   ├── Sidebar.tsx          # Collapsible navigation sidebar
 │   ├── MainContent.tsx      # Core editor container with toolbar logic
 │   ├── InlineToolbar.tsx    # Context-aware formatting toolbar
 │   ├── AlignmentGuides.tsx  # Visual alignment guides
-│   └── G2ChartComponent.tsx # Chart visualization component
+│   ├── G2ChartComponent.tsx # Chart visualization component
+│   └── ErrorBoundary.tsx    # React error boundary for error handling
+├── pages/
+│   ├── EditorPage.tsx       # Main editor page
+│   ├── SettingsPage.tsx     # Application settings
+│   └── HistoryPage.tsx      # Document history management
 ├── hooks/
 │   ├── useQuillEditor.ts    # Quill editor instance management
 │   └── useLineAlignment.ts  # Smart line positioning system
+├── store/
+│   └── editorStore.ts       # Zustand state management
+├── router/
+│   └── index.tsx            # React Router configuration
 ├── types/
-│   └── chart.ts            # Chart data type definitions
+│   ├── chart.ts            # Chart data type definitions
+│   └── quill.d.ts          # Quill editor type extensions
 └── utils/
     └── ChartBlot.tsx       # Custom Quill blot for chart embedding
 ```
@@ -76,9 +100,10 @@ src/
 ### Key Architectural Patterns
 
 **State Management**:
-- Zustand for global application state
+- Zustand for global application state (toolbar visibility, current line tracking, document title)
 - React hooks for local component state
 - Refs for persistent editor instances
+- React Router for navigation and page routing
 
 **Editor Architecture**:
 - Quill editor with custom modules and blots
@@ -92,9 +117,11 @@ src/
 
 ### Data Flow
 1. **Editor State**: Managed through Quill instance with React ref
-2. **Toolbar State**: Controlled by mouse position and content analysis
+2. **Toolbar State**: Controlled by mouse position and content analysis via Zustand store
 3. **Chart Data**: Embedded directly in editor content via custom blots
 4. **Line Information**: Calculated in real-time based on editor content
+5. **Navigation**: Handled by React Router with routes for editor, settings, and history
+6. **Error Handling**: Wrapped in ErrorBoundary component for graceful error recovery
 
 ## Development Guidelines
 
@@ -128,8 +155,9 @@ src/
 ### Required Checks Before Commit
 1. **Type Safety**: `npm run build` must complete without errors
 2. **Code Quality**: `npm run lint` must pass with zero warnings
-3. **Manual Testing**: Verify new features work correctly in development environment
-4. **Regression Testing**: Ensure existing functionality remains intact
+3. **Code Formatting**: `npm run format:check` must pass without issues
+4. **Manual Testing**: Verify new features work correctly in development environment
+5. **Regression Testing**: Ensure existing functionality remains intact
 
 ### Common Issues to Watch
 - Type mismatches in chart data structures

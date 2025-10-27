@@ -34,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     <div
       className={`${
         isCollapsed ? 'w-16' : 'w-64'
-      } bg-white border-r border-gray-200 flex flex-col h-full transition-all duration-300 ease-in-out overflow-hidden`}
+      } bg-white border-r border-gray-200 flex flex-col h-full transition-all duration-300 ease-in-out`}
       aria-expanded={!isCollapsed}
     >
       <div
@@ -69,7 +69,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      <div className={`flex-1 overflow-y-auto ${isCollapsed ? 'hidden' : 'block'}`}>
+      <div className={`flex-1 overflow-y-auto ${isCollapsed ? 'hidden' : 'block'} flex-shrink-0`}>
         <div className="p-4">
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
             历史记录
@@ -100,7 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div className={`p-4 border-t border-gray-200 ${isCollapsed ? 'flex justify-center' : ''}`}>
+      <div className={`p-4 border-t border-gray-200 ${isCollapsed ? 'flex justify-center' : ''} flex-shrink-0 mt-auto`}>
         <Link
           to="/settings"
           className={`rounded-lg transition-colors flex items-center ${
